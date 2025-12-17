@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard A｜現場監控</title>
+
+<style>
+body{font-family:Arial;background:#000;color:#fff;margin:0;padding:12px}
+h2{margin:6px 0}
+.tabs button,.events button{
+  background:#222;color:#fff;border:none;
+  padding:8px 12px;margin:4px;
+  border-radius:8px;font-size:14px
+}
+.tabs button.active,.events button.active{background:#4CAF50}
+.section{display:none}
+.section.active{display:block}
+.block{border:1px solid #333;border-radius:12px;padding:10px;margin-bottom:12px}
+.team{margin-left:12px}
+.ok{color:#4CAF50}
+.bad{color:#E53935}
+.small{font-size:13px;color:#aaa}
+</style>
+</head>
+
+<body>
+
+<h2>📱 Dashboard A</h2>
+
+<div class="tabs">
+  <button id="tab-event" class="active" onclick="showTab('event')">項目簽到監控</button>
+  <button id="tab-first" onclick="showTab('first')">首次報到總覽</button>
+</div>
+
+<div id="event" class="section active">
+  <div class="events" id="eventButtons"></div>
+  <div id="eventView"></div>
+</div>
+
+<div id="first" class="section"></div>
+<div class="small" id="update"></div>
+
+<script>
+const SHEET_ID="1dwK703awpcqW6A3BofDA8cjNSlER2C2Tz5wIu7wr6XQ";
+const SHEET_NAME="表單回應 1";
+const EVENTS=["項目一","項目二","項目三","項目四","項目五","項目六"];
+const CSV_URL=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+
+function parseCSV(t){
+ const r=t.trim().split("\n").map(l=>l.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c=>c.replace(/^"|"$/g,"")));
+ const h=r.shift();return r.map(x=>Object.fromEntries(h.map((k,i)=>[k,x[i]])))
+}
+const team=id=>id.slice(0,2), member=id=>id.slice(2);
+
+let currentEvent=EVENTS[0];
+
+function showTab(id){
+ document.querySelectorAll(".section").forEach(s=>s.classList.remove("active"));
+ document.querySelectorAll(".tabs button").forEach(b=>b.classList.remove("active"));
+ document.getElementById(id).classList.add("active");
+ document.getElementById("tab-"+id).classList.add("active");
+}
+
+function buildEventButtons(){
+ const box=document.getElementById("eventButtons");
+ box.innerHTML="";
+ EVENTS.forEach(e=>{
+  const b=document.createElement("button");
+  b.innerText=e;
+  if(e===currentEvent)b.classList.add("active");
+  b.onclick=()=>{currentEvent=e;load();};
+  box.appendChild(b);
+ });
+}
+
+async function load(){
+ const res=await fetch(CSV_URL);
+ const data=parseCSV(await res.text());
+ const now=new Date();
+
+ buildEventButtons();
+ renderEvent(data,now);
+ renderFirst(data,now);
+
+ document.getElementById("update").innerText="最後更新："+now.toLocaleTimeString();
+}
+
+function renderEvent(data,now){
+ const box=document.getElementById("eventView");
+ box.innerHTML="";
+ const cutoff=new Date(now-35*60000);
+ const seen=new Set();
+ const map={};
+
+ data.forEach(r=>{
+  if(r["簽到項目"]!==currentEvent)return;
+  const t=new Date(r["時間戳記"]);
+  if(t<cutoff)return;
+  const key=r["成員 ID"]+"|"+currentEvent;
+  if(seen.has(key))return;
+  seen.add(key);
+
+  const tm=team(r["成員 ID"]);
+  map[tm]??=[];
+  map[tm].push(member(r["成員 ID"]));
+ });
+
+ if(Object.keys(map).length===0){
+  box.innerHTML="<div class='small'>近 35 分鐘未有簽到</div>";
+  return;
+ }
+
+ const div=document.createElement("div");
+ div.className="block";
+ div.innerHTML=`<h3>${currentEvent}</h3>`;
+
+ for(const tm in map){
+  const arr=map[tm];
+  div.innerHTML+=`
+   <div class="team">
+    ${tm}隊：${arr.join(" ")}
+    <span class="${arr.length===6?"ok":"bad"}">
+     ${arr.length===6?"✅":"❌"}
+    </span>
+   </div>`;
+ }
+
+ box.appendChild(div);
+}
+
+function renderFirst(data,now){
+ const box=document.getElementById("first");
+ box.innerHTML="";
+ const cutoff=new Date(now-60*60000);
+ const seen=new Set();
+ const map={};
+
+ data.forEach(r=>{
+  if(r["簽到項目"]!=="首次報到")return;
+  const t=new Date(r["時間戳記"]);
+  if(t<cutoff)return;
+  if(seen.has(r["成員 ID"]))return;
+  seen.add(r["成員 ID"]);
+
+  const tm=team(r["成員 ID"]);
+  map[tm]??=[];
+  map[tm].push(member(r["成員 ID"]));
+ });
+
+ for(const tm in map){
+  const arr=map[tm];
+  const ok=arr.length>=6;
+  const div=document.createElement("div");
+  div.className="block";
+  div.innerHTML=`
+   <h3>${tm}隊
+    <span class="${ok?"ok":"bad"}">${ok?"✅":"❌"}</span>
+   </h3>
+   <div class="team">${arr.join(" ")}</div>`;
+  box.appendChild(div);
+ }
+}
+
+load();
+setInterval(load,60000);
+</script>
+</body>
+</html>
