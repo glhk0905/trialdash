@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard B｜總覽</title>
+
+<style>
+body{font-family:Arial;background:#000;color:#fff;margin:0;padding:14px}
+h2{margin:6px 0}
+button{
+  background:#222;color:#fff;border:none;
+  padding:8px 14px;margin:4px;
+  border-radius:8px;font-size:14px
+}
+button.active{background:#4CAF50}
+.block{border:1px solid #333;border-radius:12px;padding:12px;margin-bottom:14px}
+.team{margin-left:14px;margin-top:4px}
+.member{
+  display:inline-block;
+  padding:4px 8px;
+  border-radius:6px;
+  margin:2px;
+  background:#333;
+}
+.green{background:#2E7D32}
+.red{background:#B71C1C}
+.small{font-size:13px;color:#aaa}
+#pinLock{
+  position:fixed;inset:0;
+  background:#000;
+  display:flex;flex-direction:column;
+  justify-content:center;align-items:center
+}
+input{
+  font-size:20px;
+  padding:8px;
+  width:120px;
+  text-align:center
+}
+</style>
+</head>
+
+<body>
+
+<!-- PIN Lock -->
+<div id="pinLock">
+  <h2>🔐 輸入 PIN</h2>
+  <input id="pinInput" type="password" maxlength="4" />
+  <button onclick="checkPin()">進入</button>
+  <div id="pinError" class="small"></div>
+</div>
+
+<h2>📊 Dashboard B</h2>
+
+<div>
+  <button id="btn-team" class="active" onclick="switchView('team')">依隊伍檢視</button>
+  <button id="btn-event" onclick="switchView('event')">依項目檢視</button>
+</div>
+
+<div id="view"></div>
+<div class="small" id="update"></div>
+
+<script>
+/* ====== PIN 設定 ====== */
+const PIN = "9838";
+
+/* ====== Sheet 設定 ====== */
+const SHEET_ID = "1dwK703awpcqW6A3BofDA8cjNSlER2C2Tz5wIu7wr6XQ";
+const SHEET_NAME = "表單回應 1";
+const CSV_URL =
+ `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+
+let currentView = "team";
+
+/* ====== 工具 ====== */
+function parseCSV(t){
+ const r=t.trim().split("\n").map(l=>l.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c=>c.replace(/^"|"$/g,"")));
+ const h=r.shift();
+ return r.map(x=>Object.fromEntries(h.map((k,i)=>[k,x[i]])));
+}
+const team=id=>id.slice(0,2);
+const member=id=>id.slice(2);
+
+/* ====== PIN ====== */
+function checkPin(){
+ const v=document.getElementById("pinInput").value;
+ if(v===PIN){
+  document.getElementById("pinLock").style.display="none";
+  load();
+ }else{
+  document.getElementById("pinError").innerText="PIN 錯誤";
+ }
+}
+
+/* ====== View ====== */
+function switchView(v){
+ currentView=v;
+ document.getElementById("btn-team").classList.toggle("active",v==="team");
+ document.getElementById("btn-event").classList.toggle("active",v==="event");
+ load();
+}
+
+/* ====== Main ====== */
+async function load(){
+ const res=await fetch(CSV_URL);
+ const data=parseCSV(await res.text());
+ const now=new Date();
+
+ currentView==="team"
+  ? renderByTeam(data)
+  : renderByEvent(data);
+
+ document.getElementById("update").innerText =
+  "最後更新：" + now.toLocaleTimeString();
+}
+
+function renderByTeam(data){
+ const box=document.getElementById("view");
+ box.innerHTML="";
+ const seen=new Set();
+ const map={};
+
+ data.forEach(r=>{
+  if(r["簽到項目"]==="首次報到")return;
+  const key=r["成員 ID"]+"|"+r["簽到項目"];
+  if(seen.has(key))return;
+  seen.add(key);
+
+  const t=team(r["成員 ID"]);
+  const m=member(r["成員 ID"]);
+
+  map[t]??={members:{}};
+  map[t].members[m]=true;
+ });
+
+ for(const t in map){
+  const members=Object.keys(map[t].members);
+  const div=document.createElement("div");
+  div.className="block";
+  div.innerHTML=`<h3>${t}隊 ｜ ✅ ${members.length}</h3>`;
+  members.forEach(m=>{
+   div.innerHTML+=`<span class="member green">${m}</span>`;
+  });
+  box.appendChild(div);
+ }
+}
+
+function renderByEvent(data){
+ const box=document.getElementById("view");
+ box.innerHTML="";
+ const seen=new Set();
+ const map={};
+
+ data.forEach(r=>{
+  if(r["簽到項目"]==="首次報到")return;
+  const key=r["成員 ID"]+"|"+r["簽到項目"];
+  if(seen.has(key))return;
+  seen.add(key);
+
+  const e=r["簽到項目"];
+  const t=team(r["成員 ID"]);
+  const m=member(r["成員 ID"]);
+
+  map[e]??={};
+  map[e][t]??=[];
+  map[e][t].push(m);
+ });
+
+ for(const e in map){
+  const div=document.createElement("div");
+  div.className="block";
+  div.innerHTML=`<h3>${e}</h3>`;
+  for(const t in map[e]){
+   const arr=map[e][t];
+   div.innerHTML+=`
+    <div class="team">
+     ${t}隊：${arr.join(" ")}
+     <span class="${arr.length===6?"green":"red"}">
+      ${arr.length===6?" ✅":" ❌"}
+     </span>
+    </div>`;
+  }
+  box.appendChild(div);
+ }
+}
+</script>
+
+</body>
+</html>
