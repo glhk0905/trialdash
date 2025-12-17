@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Dashboard A｜項目即時監控</title>
+
+<style>
+body{
+  font-family: Arial, Helvetica, sans-serif;
+  background:#000;
+  color:#fff;
+  margin:0;
+  padding:12px;
+}
+h2{margin-top:0}
+.event{
+  border:1px solid #333;
+  border-radius:12px;
+  padding:12px;
+  margin-bottom:14px;
+}
+.event h3{
+  margin:0 0 8px 0;
+}
+.team{
+  margin-left:12px;
+  margin-top:6px;
+}
+.ok{color:#4CAF50}
+.bad{color:#E53935}
+.small{font-size:13px;color:#aaa}
+</style>
+</head>
+
+<body>
+<h2>📱 項目監控（近 35 分鐘）</h2>
+<div class="small" id="lastUpdate"></div>
+<div id="app">載入中…</div>
+
+<script>
+/* ===== 基本設定 ===== */
+const WINDOW_MIN = 35;
+const SHEET_ID = "1dwK703awpcqW6A3BofDA8cjNSlER2C2Tz5wIu7wr6XQ";
+const SHEET_NAME = "表單回應 1";
+
+/* Google Sheet 轉 CSV */
+const CSV_URL =
+  `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+
+function parseCSV(text){
+  const rows = text.trim().split("\n").map(r =>
+    r.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g,""))
+  );
+  const headers = rows.shift();
+  return rows.map(r => Object.fromEntries(headers.map((h,i)=>[h,r[i]])));
+}
+
+function teamFromId(id){
+  return id.slice(0,2);
+}
+function memberFromId(id){
+  return id.slice(2);
+}
+
+async function load(){
+  const res = await fetch(CSV_URL);
+  const text = await res.text();
+  const data = parseCSV(text);
+
+  const now = new Date();
+  const cutoff = new Date(now - WINDOW_MIN*60*1000);
+
+  // 過濾 35 分鐘內
+  const recent = data.filter(r=>{
+    const t = new Date(r["時間戳記"]);
+    return t >= cutoff;
+  });
+
+  // 去重：成員 + 項目
+  const seen = new Set();
+  const clean = recent.filter(r=>{
+    const key = r["成員 ID"]+"|"+r["簽到項目"];
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // event → team → members
+  const map = {};
+  clean.forEach(r=>{
+    const event = r["簽到項目"];
+    if(event === "首次報到") return;
+
+    const team = teamFromId(r["成員 ID"]);
+    const member = memberFromId(r["成員 ID"]);
+
+    map[event] ??= {};
+    map[event][team] ??= [];
+    map[event][team].push(member);
+  });
+
+  render(map);
+  document.getElementById("lastUpdate").innerText =
+    "最後更新：" + now.toLocaleTimeString();
+}
+
+function render(map){
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+
+  if(Object.keys(map).length === 0){
+    app.innerHTML = "<div class='small'>近 35 分鐘內沒有項目簽到</div>";
+    return;
+  }
+
+  for(const event in map){
+    const div = document.createElement("div");
+    div.className = "event";
+
+    let total = 0;
+    Object.values(map[event]).forEach(arr=>total+=arr.length);
+
+    div.innerHTML = `<h3>${event}（${total} 人）</h3>`;
+
+    for(const team in map[event]){
+      const members = map[event][team];
+      const ok = members.length === 6;
+      div.innerHTML += `
+        <div class="team">
+          ${team}隊：
+          ${members.join(" ")}
+          <span class="${ok?"ok":"bad"}">
+            ${ok?"✅":"❌"}
+          </span>
+        </div>
+      `;
+    }
+    app.appendChild(div);
+  }
+}
+
+load();
+setInterval(load, 60*1000);
+</script>
+</body>
+</html>
