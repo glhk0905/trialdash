@@ -3,74 +3,64 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard B｜總覽</title>
+<title>Dashboard B</title>
 
 <style>
 body{font-family:Arial;background:#000;color:#fff;margin:0;padding:14px}
 h2{margin:6px 0}
-button{
-  background:#222;color:#fff;border:none;
-  padding:8px 14px;margin:4px;
-  border-radius:8px;font-size:14px
-}
+button{background:#222;color:#fff;border:none;padding:8px 14px;margin:4px;border-radius:8px}
 button.active{background:#4CAF50}
 .block{border:1px solid #333;border-radius:12px;padding:12px;margin-bottom:14px}
-.team{margin-left:14px;margin-top:6px}
-.member{
-  display:inline-block;
-  padding:4px 8px;
-  border-radius:6px;
-  margin:3px;
-  font-size:14px
-}
+.team{margin-left:14px;margin-top:8px}
+.member{display:inline-block;padding:6px 10px;border-radius:8px;margin:4px;cursor:pointer}
 .green{background:#2E7D32}
 .orange{background:#EF6C00}
 .red{background:#B71C1C}
 .small{font-size:13px;color:#aaa}
 
-#pinLock{
- position:fixed;inset:0;background:#000;
- display:flex;flex-direction:column;
- justify-content:center;align-items:center
+dialog{
+ border:none;border-radius:12px;
+ padding:16px;background:#111;color:#fff;
+ width:90%;max-width:420px
 }
-input{font-size:20px;padding:8px;width:120px;text-align:center}
+dialog::backdrop{background:rgba(0,0,0,.7)}
 </style>
 </head>
 
 <body>
 
-<!-- PIN Lock -->
-<div id="pinLock">
-  <h2>🔐 輸入 PIN</h2>
-  <input id="pinInput" type="password" maxlength="4">
-  <button onclick="checkPin()">進入</button>
-  <div id="pinError" class="small"></div>
+<!-- PIN -->
+<div id="pinLock" style="position:fixed;inset:0;background:#000;display:flex;flex-direction:column;justify-content:center;align-items:center">
+ <h2>🔐 輸入 PIN</h2>
+ <input id="pinInput" type="password" maxlength="4" style="font-size:20px;padding:8px;width:120px;text-align:center">
+ <button onclick="checkPin()">進入</button>
+ <div id="pinError" class="small"></div>
 </div>
 
 <h2>📊 Dashboard B</h2>
 
 <div>
-  <button id="btn-team" class="active" onclick="switchView('team')">依隊伍檢視</button>
-  <button id="btn-event" onclick="switchView('event')">依項目檢視</button>
+ <button id="btn-team" class="active" onclick="switchView('team')">依隊伍</button>
+ <button id="btn-event" onclick="switchView('event')">依項目</button>
 </div>
 
 <div id="view"></div>
 <div class="small" id="update"></div>
 
-<script>
-const PIN="9838";
+<dialog id="detailDialog"></dialog>
 
-/* ====== Sheet ====== */
+<script>
+/* ===== 基本設定 ===== */
+const PIN="9838";
 const SHEET_ID="1dwK703awpcqW6A3BofDA8cjNSlER2C2Tz5wIu7wr6XQ";
 const SHEET_NAME="表單回應 1";
 const CSV_URL=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
-
-/* ====== 正式 6 項目（只呢啲先計） ====== */
 const EVENTS=["項目一","項目二","項目三","項目四","項目五","項目六"];
 
 let currentView="team";
+let cache=[];
 
-/* ====== Utils ====== */
+/* ===== 工具 ===== */
 function parseCSV(t){
  const r=t.trim().split("\n").map(l=>l.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c=>c.replace(/^"|"$/g,"")));
  const h=r.shift();
@@ -79,45 +69,50 @@ function parseCSV(t){
 const team=id=>id.slice(0,2);
 const member=id=>id.slice(2);
 
-/* ====== PIN ====== */
+/* ===== PIN ===== */
 function checkPin(){
- if(document.getElementById("pinInput").value===PIN){
-  document.getElementById("pinLock").style.display="none";
+ if(pinInput.value===PIN){
+  pinLock.style.display="none";
   load();
+  setInterval(load,5000); // 即時更新
  }else{
-  document.getElementById("pinError").innerText="PIN 錯誤";
+  pinError.innerText="PIN 錯誤";
  }
 }
 
-/* ====== View ====== */
+/* ===== View ===== */
 function switchView(v){
  currentView=v;
- document.getElementById("btn-team").classList.toggle("active",v==="team");
- document.getElementById("btn-event").classList.toggle("active",v==="event");
- load();
+ btn-team.classList.toggle("active",v==="team");
+ btn-event.classList.toggle("active",v==="event");
+ render();
 }
 
-/* ====== Main ====== */
+/* ===== Load ===== */
 async function load(){
- const res=await fetch(CSV_URL);
- const data=parseCSV(await res.text());
- const now=new Date();
-
- currentView==="team"
-  ? renderByTeam(data)
-  : renderByEvent(data);
-
- document.getElementById("update").innerText="最後更新："+now.toLocaleTimeString();
+ const res=await fetch(CSV_URL+"&_="+Date.now());
+ cache=parseCSV(await res.text());
+ render();
+ update.innerText="最後更新："+new Date().toLocaleTimeString();
 }
 
-/* ====== Team View（紅橙綠） ====== */
-function renderByTeam(data){
- const box=document.getElementById("view");
- box.innerHTML="";
+/* ===== Render ===== */
+function render(){
+ currentView==="team"?renderTeam():renderEvent();
+}
+
+/* ===== 依隊伍檢視（顏色已鎖死） ===== */
+function renderTeam(){
+ view.innerHTML="";
  const seen=new Set();
  const map={};
+ const first=new Set();
 
- data.forEach(r=>{
+ cache.forEach(r=>{
+  if(r["簽到項目"]==="首次報到"){
+   first.add(r["成員 ID"]);
+   return;
+  }
   if(!EVENTS.includes(r["簽到項目"]))return;
 
   const key=r["成員 ID"]+"|"+r["簽到項目"];
@@ -126,7 +121,6 @@ function renderByTeam(data){
 
   const t=team(r["成員 ID"]);
   const m=member(r["成員 ID"]);
-
   map[t]??={};
   map[t][m]??=new Set();
   map[t][m].add(r["簽到項目"]);
@@ -136,32 +130,51 @@ function renderByTeam(data){
   const div=document.createElement("div");
   div.className="block";
   div.innerHTML=`<h3>${t}隊</h3>`;
-
-  const wrap=document.createElement("div");
-  wrap.className="team";
+  const box=document.createElement("div");
+  box.className="team";
 
   for(const m in map[t]){
-   const count=map[t][m].size;
-   const cls=count===6?"green":count>0?"orange":"red";
-   wrap.innerHTML+=
-    `<span class="member ${cls}">${m} (${count}/6)</span>`;
+   const id=t+m;
+   const done=map[t][m].size;
+
+   let cls="red";
+   if(first.has(id) && done>0) cls="green";
+   else if(first.has(id) && done===0) cls="orange";
+
+   const span=document.createElement("span");
+   span.className=`member ${cls}`;
+   span.innerText=m;
+   span.onclick=()=>showDetail(t,m,map[t][m],first.has(id));
+   box.appendChild(span);
   }
 
-  div.appendChild(wrap);
-  box.appendChild(div);
+  div.appendChild(box);
+  view.appendChild(div);
  }
 }
 
-/* ====== Event View（保留原本） ====== */
-function renderByEvent(data){
- const box=document.getElementById("view");
- box.innerHTML="";
+/* ===== Dialog ===== */
+function showDetail(t,m,set,hasFirst){
+ detailDialog.innerHTML=`
+  <h3>${t}隊 ${m}</h3>
+  <p>📌 首次報到：${hasFirst?"✅ 已完成":"❌ 未完成"}</p>
+  <p>✅ 已完成項目：</p>
+  <ul>${[...set].map(x=>`<li>${x}</li>`).join("")||"<li>—</li>"}</ul>
+  <p>❌ 尚未完成：</p>
+  <ul>${EVENTS.filter(e=>!set.has(e)).map(x=>`<li>${x}</li>`).join("")}</ul>
+  <button onclick="detailDialog.close()">關閉</button>
+ `;
+ detailDialog.showModal();
+}
+
+/* ===== 依項目檢視 ===== */
+function renderEvent(){
+ view.innerHTML="";
  const seen=new Set();
  const map={};
 
- data.forEach(r=>{
+ cache.forEach(r=>{
   if(!EVENTS.includes(r["簽到項目"]))return;
-
   const key=r["成員 ID"]+"|"+r["簽到項目"];
   if(seen.has(key))return;
   seen.add(key);
@@ -169,7 +182,6 @@ function renderByEvent(data){
   const e=r["簽到項目"];
   const t=team(r["成員 ID"]);
   const m=member(r["成員 ID"]);
-
   map[e]??={};
   map[e][t]??=[];
   map[e][t].push(m);
@@ -189,7 +201,7 @@ function renderByEvent(data){
      </span>
     </div>`;
   }
-  box.appendChild(div);
+  view.appendChild(div);
  }
 }
 </script>
